@@ -22,7 +22,7 @@ def parse_args():
     parser.add_argument('--job', default='export', type=str, help='support option: train/export')
     parser.add_argument('--suffix', default=None, type=str, help='suffix to help you remember what experiment you ran')
     # env
-    parser.add_argument('--model', default='plain20', type=str, help='model to prune')
+    parser.add_argument('--model', default='resnet56', type=str, help='model to prune')
     parser.add_argument('--dataset', default='cifar10', type=str, help='dataset to use (cifar/imagenet)')
     parser.add_argument('--data_root', default='D:\_1work\pycharmcode', type=str, help='dataset path')
     parser.add_argument('--preserve_ratio', default=0.5, type=float, help='preserve ratio of the model')
@@ -31,7 +31,7 @@ def parse_args():
     parser.add_argument('--reward', default='acc_reward', type=str, help='Setting the reward')
     parser.add_argument('--acc_metric', default='acc1', type=str, help='use acc1 or acc5')
     parser.add_argument('--use_real_val', dest='use_real_val', action='store_true')
-    parser.add_argument('--ckpt_path', default='D:\_1work\pycharmcode\pycharmproject\mac_secondtry\checkpoints\ckpt.pth.tar', type=str, help='manual path of checkpoint')
+    parser.add_argument('--ckpt_path', default='./checkpoints/cifar10_resnet56-187c023a.pth', type=str, help='manual path of checkpoint')
     # parser.add_argument('--pruning_method', default='cp', type=str,
     #                     help='method to prune (fg/cp for fine-grained and channel pruning)')
     # only for channel pruning
@@ -72,7 +72,9 @@ def parse_args():
     # export
 
     parser.add_argument('--ratios', default=None, type=str, help='ratios for pruning')
-    parser.add_argument('--channels', default='3, 16, 8, 8, 16, 8, 16, 16, 24, 24, 24, 32, 32, 40, 48, 48, 56, 16, 16', type=str, help='channels after pruning')
+    # parser.add_argument('--channels', default='3, 16, 8, 8, 16, 8, 16, 16, 24, 24, 24, 32, 32, 40, 48, 48, 56, 16, 16', type=str, help='channels after pruning')
+    parser.add_argument('--channels', default='3, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 16, 16, 16, 16, 16, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 32, 56, 32, 56, 56, 56, 56, 56, 56, 64, 64, 64, 64, 64, 64, 64, 64, 16, 16, 16',
+                        type=str, help='channels after pruning')
     parser.add_argument('--export_path', default='./prunedmodel/palin20pruned10.pkl', type=str, help='path for exporting models')
     parser.add_argument('--use_new_input', dest='use_new_input', action='store_true', help='use new input feature')
     #compact
@@ -100,6 +102,10 @@ def get_model_and_checkpoint(model, dataset, checkpoint_path, n_gpu=1):
     elif model == 'plain20pr' and dataset=='cifar10':
         from models.cifar_plain import plain20pr
         net = plain20pr(10)
+    elif model == 'resnet56' and dataset == 'cifar10':
+        from models.pytorch_cifar_models.resnetcifar import cifar10_resnet56
+        net = cifar10_resnet56()
+        print('load model over')
     else:
         raise NotImplementedError
     sd = torch.load(checkpoint_path)

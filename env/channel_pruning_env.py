@@ -252,14 +252,6 @@ class ChannelPruningEnv:
             w_reg = least_square_sklearn(X=X_mask, Y=Y)
             # rec_weight = w_reg.coef_.reshape(-1, d_prime, k_h, k_w)
             rec_weight = w_reg.reshape(-1, d_prime, k_h, k_w)
-        # if weight.shape[2] == 1:  # 1x1 conv or fc
-            # from lib.utils import least_square_sklearn
-            # if  op_type=='Conv2D':
-            #     rec_weight = torch.from_numpy(weight[:, mask, :, :]).cpu()
-            # else:
-            #     rec_weight = torch.from_numpy(weight[:, mask]).cpu()
-            # rec_weight = rec_weight.reshape(-1, 1, 1, d_prime)  # (C_out, K_h, K_w, C_in')
-            # rec_weight = np.transpose(rec_weight, (0, 3, 1, 2))  # (C_out, C_in', K_h, K_w)
 
         else:
             raise NotImplementedError('Current code only supports 1x1 conv now!')
