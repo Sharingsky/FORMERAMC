@@ -90,10 +90,25 @@ class ChannelPruningEnv:
         ou2 = model2(fea_in)
         recor1 = model1.record
         recor2 = model2.record
-        for i in range(len(recor1)):
-            distance = recor1[i][0]-recor2[i][0]
-            print(torch.mean(distance))
-            print(torch.var(distance))
+        # for i in range(len(recor1)):
+        from PIL import Image
+        from torchvision import transforms
+        import matplotlib.pyplot as plt
+        to_pil_image = transforms.ToPILImage()
+        im1 = to_pil_image(recor1[1][0][0])
+        im2 = to_pil_image(recor2[1][0][0])
+        plt.figure()
+        ax1= plt.subplot(2,2,1)
+        ax2 = plt.subplot(2,2,2)
+        plt.sca(ax1)
+        plt.imshow(im1)
+        plt.sca(ax2)
+        plt.imshow(im2)
+        plt.subplots_adjust(left=0.10, top=0.88, right=0.65, bottom=0.08, wspace=0.02, hspace=0.02)
+        plt.show()
+        distance = recor1[1][0]-recor2[1][0]
+        print(torch.mean(distance))
+        print(torch.var(distance))
     def step(self, action):
         # Pseudo prune and get the corresponding statistics. The real pruning happens till the end of all pseudo pruning
         if self.visited[self.cur_ind]:
@@ -124,10 +139,13 @@ class ChannelPruningEnv:
         self.strategy_dict[self.prunable_idx[self.cur_ind]][0] = action
         if self.cur_ind > 0:
             self.strategy_dict[self.prunable_idx[self.cur_ind - 1]][1] = action
-
+            if type(self.prunable_ops[self.cur_ind-1])==nn.Conv2d:
+                if self.prunable_ops[self.cur_ind-1].kernel_size==(1,1):
+                    self.strategy_dict[self.prunable_idx[self.cur_ind - 2]][1] = action
         # all the actions are made
         if self._is_final_layer():
             assert len(self.strategy) == len(self.prunable_idx)
+            print(self.strategy_dict)
             current_flops = self._cur_flops()
             acc_t1 = time.time()
             # TODO:比较featuremap

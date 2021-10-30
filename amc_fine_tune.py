@@ -61,7 +61,52 @@ def get_model():
         raise NotImplementedError
     return net.cuda() if use_cuda else net
 
+def newtrain(epoch, train_loader,model):
+    print('\nEpoch: %d' % epoch)
+    model.train()
+    args=parse_args()
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+    end = time.time()
+    use_cuda=True
+    criterion = nn.CrossEntropyLoss()
+    print('Using SGD...')
+    print('weight decay  = {}'.format(args.wd))
+    print('=> Start training...')
+    print('Training {} on {}...'.format(args.model, args.dataset))
+    log_dir = get_output_folder('./logs', '{}_{}_gatetrain'.format(args.model, args.dataset))
+    print('=> Saving logs to {}'.format(log_dir))
+    # tf writer
+    writer = SummaryWriter(logdir=log_dir)
+    optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.wd)
+    for batch_idx, (inputs, targets) in enumerate(train_loader):
+        if use_cuda:
+            inputs, targets = inputs.cuda(), targets.cuda()
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, targets)
 
+        loss.backward()
+        optimizer.step()
+
+        # measure accuracy and record loss
+        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+        losses.update(loss.item(), inputs.size(0))
+        top1.update(prec1.item(), inputs.size(0))
+        top5.update(prec5.item(), inputs.size(0))
+        # timing
+        batch_time.update(time.time() - end)
+        end = time.time()
+
+        progress_bar(batch_idx, len(train_loader), 'Loss: {:.3f} | Acc1: {:.3f}% | Acc5: {:.3f}%'
+                     .format(losses.avg, top1.avg, top5.avg))
+        for i,g in enumerate(model.gate_dic):
+            writer.add_scalar('para/gate{}'.format(i), torch.mean(model.gate_dic[g]), batch_idx)
+        writer.add_scalar('loss/train', losses.avg, batch_idx)
+        writer.add_scalar('acc/train_top1', top1.avg, batch_idx)
+        writer.add_scalar('acc/train_top5', top5.avg, batch_idx)
 def train(epoch, train_loader):
     print('\nEpoch: %d' % epoch)
     net.train()

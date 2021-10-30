@@ -7,6 +7,7 @@ import numpy as np
 import argparse
 from copy import deepcopy
 import torch
+import torch.nn as nn
 torch.backends.cudnn.deterministic = True
 
 from env.channel_pruning_env import ChannelPruningEnv
@@ -19,10 +20,10 @@ from tensorboardX import SummaryWriter
 def parse_args():
     parser = argparse.ArgumentParser(description='AMC search script')
 
-    parser.add_argument('--job', default='export', type=str, help='support option: train/export')
+    parser.add_argument('--job', default='gates_train', type=str, help='support option: train/export')
     parser.add_argument('--suffix', default=None, type=str, help='suffix to help you remember what experiment you ran')
     # env
-    parser.add_argument('--model', default='resnet56', type=str, help='model to prune')
+    parser.add_argument('--model', default='plain20', type=str, help='model to prune')
     parser.add_argument('--dataset', default='cifar10', type=str, help='dataset to use (cifar/imagenet)')
     parser.add_argument('--data_root', default='D:\_1work\pycharmcode', type=str, help='dataset path')
     parser.add_argument('--preserve_ratio', default=0.5, type=float, help='preserve ratio of the model')
@@ -31,7 +32,7 @@ def parse_args():
     parser.add_argument('--reward', default='acc_reward', type=str, help='Setting the reward')
     parser.add_argument('--acc_metric', default='acc1', type=str, help='use acc1 or acc5')
     parser.add_argument('--use_real_val', dest='use_real_val', action='store_true')
-    parser.add_argument('--ckpt_path', default='./checkpoints/cifar10_resnet56-187c023a.pth', type=str, help='manual path of checkpoint')
+    parser.add_argument('--ckpt_path', default='./checkpoints/ckpt.pth.tar', type=str, help='manual path of checkpoint')
     # parser.add_argument('--pruning_method', default='cp', type=str,
     #                     help='method to prune (fg/cp for fine-grained and channel pruning)')
     # only for channel pruning
@@ -72,17 +73,22 @@ def parse_args():
     # export
 
     parser.add_argument('--ratios', default=None, type=str, help='ratios for pruning')
-    # parser.add_argument('--channels', default='3, 16, 8, 8, 16, 8, 16, 16, 24, 24, 24, 32, 32, 40, 48, 48, 56, 16, 16', type=str, help='channels after pruning')
-    parser.add_argument('--channels', default='3, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 16, 16, 16, 16, 16, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 32, 56, 32, 56, 56, 56, 56, 56, 56, 64, 64, 64, 64, 64, 64, 64, 64, 16, 16, 16',
-                        type=str, help='channels after pruning')
+    parser.add_argument('--channels', default='3, 16, 8, 8, 16, 8, 16, 16, 24, 24, 24, 32, 32, 40, 48, 48, 56, 16, 16', type=str, help='channels after pruning')
+    # parser.add_argument('--channels', default='3, 16, 8, 16, 8, 16, 8, 16, 8, 16, 8, 16, 8, 16, 8, 16, 8, 16, 8, 16, 16, 16, 16, 32, 16, 32, 16, 24, 16, 24, 16, 24, 16, 24, 16, 24, 16, 24, 32, 64, 32, 56, 56, 48, 56, 48, 56, 48, 56, 48, 56, 40, 56, 40, 56, 24, 16, 16',
+    #                     type=str, help='channels after pruning')
     parser.add_argument('--export_path', default='./prunedmodel/palin20pruned10.pkl', type=str, help='path for exporting models')
     parser.add_argument('--use_new_input', dest='use_new_input', action='store_true', help='use new input feature')
     #compact
 
-    parser.add_argument('--compa', default=True, type=bool)
+    parser.add_argument('--compa', default=False, type=bool)
     parser.add_argument('--model_cp',default='plain20pr')
     parser.add_argument('--ckpt_path_cp', default='./prunedmodel/palin20pruned10.pkl', type=str,)
 
+    #gates
+    parser.add_argument('--kesi',default=0.1,type=float)
+    parser.add_argument('--wd', default=4e-5, type=float, help='weight decay')
+    parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
+    parser.add_argument('--n_epoch', default=150, type=int, help='number of epochs to train')
     return parser.parse_args()
 
 
@@ -118,7 +124,56 @@ def get_model_and_checkpoint(model, dataset, checkpoint_path, n_gpu=1):
         net = torch.nn.DataParallel(net, range(n_gpu))
 
     return net, deepcopy(net.state_dict())
+class Gatemodel(nn.Module):
+    def __init__(self,model):
+        super(Gatemodel, self).__init__()
+        self.model=model
+        self.gate_dic= {}
+        self.m_list = []
+        self.validlayeridx = 0
+        self.add_gates(self.model)
+        self.kesi = args.kesi
 
+    def add_gates(self, model):
+        for i,m in enumerate(model.modules()):
+            if type(m)==nn.Conv2d and not m.groups== m.in_channels:
+                self.gate_dic[self.validlayeridx]=torch.nn.Parameter(torch.randn((m.in_channels,1)),requires_grad=True).cuda()
+                self.m_list.append(m)
+                self.validlayeridx+=1
+            elif type(m) in [nn.BatchNorm2d,nn.ReLU,nn.Linear,nn.AdaptiveAvgPool2d,
+                             nn.MaxPool2d]:
+                self.m_list.append(m)
+                self.validlayeridx+=1
+
+    def forward(self,x):
+        for i,m in enumerate(self.m_list):
+            if i in self.gate_dic:
+                n,c,h,w = x.size()
+                x = x.reshape(n,c,-1)
+                x = x.mul(self.gate_dic[i]*self.gate_dic[i]/(self.gate_dic[i]*self.gate_dic[i]+self.kesi))
+                x = x.reshape(n,c,h,w)
+
+            if type(self.m_list[i]) == nn.Linear:
+
+                x=x.mean(2).mean(2)
+
+
+            x = self.m_list[i](x)
+
+
+        return x
+def gates_train():
+    from amc_fine_tune import newtrain as trainmodel
+    #1.加载模型，添加门
+
+    gatemodel=Gatemodel(model)
+        #遍历模型，在普通卷积前加上门，即添加上可学习的向量，同时要注意shortcut前后的两个卷积是相同的门
+
+    trainmodel(args.n_epoch,train_loader,gatemodel)
+    #2.结合门一起训练
+
+
+    #3.
 
 def train(num_episode, agent, env, output):
     agent.is_training = True
@@ -229,10 +284,11 @@ if __name__ == "__main__":
     model, checkpoint = get_model_and_checkpoint(args.model, args.dataset, checkpoint_path=args.ckpt_path,
                                                  n_gpu=args.n_gpu)
 
-    env = ChannelPruningEnv(model, checkpoint, args.dataset,
-                            preserve_ratio=1. if args.job == 'export' else args.preserve_ratio,
-                            n_data_worker=args.n_worker, batch_size=args.data_bsize,
-                            args=args, export_model=args.job == 'export', use_new_input=args.use_new_input)
+    if not args.job == 'gates_train':
+        env = ChannelPruningEnv(model, checkpoint, args.dataset,
+                                preserve_ratio=1. if args.job == 'export' else args.preserve_ratio,
+                                n_data_worker=args.n_worker, batch_size=args.data_bsize,
+                                args=args, export_model=args.job == 'export', use_new_input=args.use_new_input)
 
     if args.job == 'train':
         # build folder and logs
@@ -255,6 +311,12 @@ if __name__ == "__main__":
         train(args.train_episode, agent, env, args.output)
     elif args.job == 'export':
         export_model(env, args)
+    elif args.job == 'gates_train':
+        from lib.data import get_dataset
+        train_loader,val_loader,n_classes =  get_dataset(args.dataset,
+                                                         args.bsize,args.n_worker,data_root=args.data_root)
+        gates_train()
+
 
     else:
         raise RuntimeError('Undefined job {}'.format(args.job))

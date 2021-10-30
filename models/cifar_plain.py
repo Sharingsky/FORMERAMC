@@ -36,6 +36,7 @@ class PLAIN(nn.Module):
     self.meta_data = OrderedDict()
     self.name_to_next_name = OrderedDict()
     self.record = []
+    self.recordflag = False
 
     # self.conv0 = nn.Conv2d(3, 8, kernel_size=3, padding=1, bias=False)
     # self.bn0 = nn.BatchNorm2d(8)
@@ -78,8 +79,9 @@ class PLAIN(nn.Module):
     # x = F.relu(self.bn0(self.conv0(x)))
     for i,layer in enumerate(self.layers):
       x = layer(x)
-      if 10<i<14:
-        self.record.append(x)
+      if self.recordflag:
+        if 5<i<8:
+          self.record.append(x)
       if isinstance(layer, standard_block):
         x = x[0]
 
